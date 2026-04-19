@@ -1,0 +1,64 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information representing a student/tenant.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "avatar": { "type": "string" },
+        "createdAt": { "type": "number", "description": "Timestamp" },
+        "updatedAt": { "type": "number", "description": "Timestamp" },
+        "role": { "type": "string", "enum": ["user", "admin"] }
+      },
+      "required": ["email", "name", "createdAt", "role"]
+    },
+    "Stay": {
+      "title": "Stay",
+      "description": "Housing property listing.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "location": { "type": "string" },
+        "price": { "type": "number" },
+        "rating": { "type": "number" },
+        "image": { "type": "string" },
+        "amenities": { "type": "array", "items": { "type": "string" } },
+        "distanceToUni": { "type": "string" },
+        "type": { "type": "string", "enum": ["PG", "Hostel", "Flat"] },
+        "description": { "type": "string" },
+        "createdAt": { "type": "number" },
+        "updatedAt": { "type": "number" }
+      },
+      "required": ["name", "location", "image", "type", "description"]
+    },
+    "ViewingRequest": {
+      "title": "Viewing Request",
+      "description": "A user's request to view a property.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "stayId": { "type": "string" },
+        "status": { "type": "string", "enum": ["pending", "contacted", "fulfilled", "cancelled"] },
+        "message": { "type": "string" },
+        "createdAt": { "type": "number" }
+      },
+      "required": ["userId", "stayId", "status", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile document."
+    },
+    "/stays/{stayId}": {
+      "schema": { "$ref": "#/entities/Stay" },
+      "description": "Housing properties/listings."
+    },
+    "/viewing_requests/{requestId}": {
+      "schema": { "$ref": "#/entities/ViewingRequest" },
+      "description": "Viewing requests for properties."
+    }
+  }
+}

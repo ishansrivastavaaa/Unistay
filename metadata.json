@@ -1,0 +1,5 @@
+{
+  "name": "UniStay",
+  "description": "Instant student housing and rentals. Book verified accommodations in minutes.",
+  "requestFramePermissions": ["geolocation"]
+}

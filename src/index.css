@@ -1,0 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400;1,600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Playfair Display", ui-serif, Georgia, serif;
+  --color-cotton: var(--theme-cotton);
+  --color-cherry: var(--theme-cherry);
+  --color-maroon: var(--theme-maroon);
+  --color-noir: var(--theme-noir);
+  --color-card: var(--theme-card);
+}
+
+:root {
+  --theme-cotton: #EDEBDD;
+  --theme-cherry: #810100;
+  --theme-maroon: #630000;
+  --theme-noir: #1B1717;
+  --theme-card: #ffffff;
+}
+
+.dark {
+  --theme-cotton: #1B1717;
+  --theme-noir: #EDEBDD;
+  --theme-card: #221d1d;
+}
+
+body {
+  background-color: var(--color-cotton);
+  color: var(--color-noir);
+  @apply font-sans antialiased transition-colors duration-300;
+}
+
+.glass-morphism {
+  @apply bg-cotton/80 backdrop-blur-md shadow-sm border border-noir/10 transition-colors duration-300;
+}

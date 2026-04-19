@@ -1,0 +1,125 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if false; }
+    
+    function isValidId(id) { 
+        return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); 
+    }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isStrictlySignedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    
+    // Explicit Admin Backdoor using your verified Google Account email
+    function isAdmin() {
+      return isStrictlySignedIn() && 
+        (exists(/databases/$(database)/documents/admins/$(request.auth.uid)) || 
+         request.auth.token.email == 'ishansrivastavaaa@gmail.com');
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'name', 'createdAt', 'role']) &&
+             data.email is string && data.email.size() <= 255 &&
+             data.name is string && data.name.size() <= 100 &&
+             data.createdAt is timestamp &&
+             data.role in ['user', 'admin'] &&
+             (data.keys().hasAll(['avatar']) ? (data.avatar is string && data.avatar.size() <= 1024) : true);
+    }
+    
+    function isValidStay(data) {
+      return data.keys().hasAll(['name', 'location', 'image', 'type', 'description', 'createdAt', 'ownerId', 'status']) &&
+             data.name is string && data.name.size() <= 200 &&
+             data.location is string && data.location.size() <= 200 &&
+             data.image is string && data.image.size() <= 1024 &&
+             data.type in ['PG', 'Hostel', 'Flat'] &&
+             data.description is string && data.description.size() <= 5000 &&
+             data.createdAt is timestamp &&
+             data.ownerId is string && data.ownerId.size() <= 128 &&
+             data.status in ['pending', 'approved', 'rejected'] &&
+             (data.keys().hasAll(['price']) ? (data.price is number) : true) &&
+             (data.keys().hasAll(['rating']) ? (data.rating is number) : true) &&
+             (data.keys().hasAll(['distanceToUni']) ? (data.distanceToUni is string && data.distanceToUni.size() <= 100) : true) &&
+             (data.keys().hasAll(['amenities']) ? (data.amenities is list && data.amenities.size() <= 20 && (data.amenities.size() == 0 || data.amenities[0] is string)) : true);
+    }
+    
+    function isValidViewingRequest(data) {
+      return data.keys().hasAll(['userId', 'stayId', 'status', 'createdAt']) &&
+             data.userId == request.auth.uid &&
+             data.stayId is string && data.stayId.size() <= 128 &&
+             data.status in ['pending', 'contacted', 'fulfilled', 'cancelled'] &&
+             data.createdAt is timestamp &&
+             (data.keys().hasAll(['message']) ? (data.message is string && data.message.size() <= 1000) : true);
+    }
+
+    match /users/{userId} {
+      allow read: if isStrictlySignedIn() && (request.auth.uid == userId || isAdmin());
+      allow create: if isStrictlySignedIn() && 
+                       request.auth.uid == userId &&
+                       isValidUser(incoming()) &&
+                       incoming().createdAt == request.time &&
+                       incoming().role == 'user';
+      allow update: if isStrictlySignedIn() &&
+                       request.auth.uid == userId &&
+                       isValidUser(incoming()) &&
+                       incoming().role == existing().role &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['name', 'avatar', 'updatedAt']) &&
+                       (incoming().keys().hasAll(['updatedAt']) ? incoming().updatedAt == request.time : true);
+    }
+    
+    match /admins/{adminId} {
+      allow read: if isStrictlySignedIn() && request.auth.uid == adminId;
+      allow write: if false; 
+    }
+
+    match /stays/{stayId} {
+      // READS: Anyone can read an approved listing. Only the owner or an admin can read a pending/rejected one.
+      allow get: if resource.data.status == 'approved' || (isStrictlySignedIn() && resource.data.ownerId == request.auth.uid) || isAdmin();
+      allow list: if resource.data.status == 'approved' || (isStrictlySignedIn() && resource.data.ownerId == request.auth.uid) || isAdmin();
+      
+      // CREATES: Authorized users can create ONE, but MUST forcefully set status to 'pending'.
+      allow create: if isStrictlySignedIn() && 
+                       isValidId(stayId) && 
+                       isValidStay(incoming()) && 
+                       incoming().createdAt == request.time &&
+                       incoming().ownerId == request.auth.uid &&
+                       incoming().status == 'pending';
+                       
+      // UPDATES: Only Admins can execute an update (usually specifically to approve/reject statuses)
+      allow update: if isStrictlySignedIn() && 
+                       isValidId(stayId) && 
+                       isValidStay(incoming()) &&
+                       incoming().ownerId == existing().ownerId &&
+                       incoming().createdAt == existing().createdAt &&
+                       (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']));
+                       
+      // DELETES: Only Admins.
+      allow delete: if isAdmin() && isValidId(stayId);
+    }
+    
+    match /viewing_requests/{requestId} {
+      allow get: if isStrictlySignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isStrictlySignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      
+      allow create: if isStrictlySignedIn() && 
+                       isValidId(requestId) &&
+                       isValidViewingRequest(incoming()) && 
+                       incoming().createdAt == request.time &&
+                       incoming().status == 'pending' &&
+                       exists(/databases/$(database)/documents/stays/$(incoming().stayId));
+                       
+      allow update: if isStrictlySignedIn() &&
+                       isValidId(requestId) &&
+                       isValidViewingRequest(incoming()) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().stayId == existing().stayId &&
+                       (
+                         (request.auth.uid == existing().userId && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && incoming().status == 'cancelled') ||
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+                       );
+                       
+      allow delete: if isAdmin() && isValidId(requestId);
+    }
+  }
+}
