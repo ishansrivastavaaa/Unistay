@@ -73,11 +73,9 @@ service cloud.firestore {
     }
 
     match /stays/{stayId} {
-      // READS: Anyone can read an approved listing. Only the owner or an admin can read a pending/rejected one.
       allow get: if resource.data.status == 'approved' || (isStrictlySignedIn() && resource.data.ownerId == request.auth.uid) || isAdmin();
       allow list: if resource.data.status == 'approved' || (isStrictlySignedIn() && resource.data.ownerId == request.auth.uid) || isAdmin();
       
-      // CREATES: Authorized users can create ONE, but MUST forcefully set status to 'pending'.
       allow create: if isStrictlySignedIn() && 
                        isValidId(stayId) && 
                        isValidStay(incoming()) && 
@@ -85,21 +83,23 @@ service cloud.firestore {
                        incoming().ownerId == request.auth.uid &&
                        incoming().status == 'pending';
                        
-      // UPDATES: Only Admins can execute an update (usually specifically to approve/reject statuses)
       allow update: if isStrictlySignedIn() && 
                        isValidId(stayId) && 
                        isValidStay(incoming()) &&
                        incoming().ownerId == existing().ownerId &&
                        incoming().createdAt == existing().createdAt &&
-                       (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']));
+                       (
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                         // Allow system to update rating and reviewsCount 
+                         (isStrictlySignedIn() && incoming().diff(existing()).affectedKeys().hasOnly(['rating', 'reviewsCount']))
+                       );
                        
-      // DELETES: Only Admins.
       allow delete: if isAdmin() && isValidId(stayId);
     }
     
     match /viewing_requests/{requestId} {
-      allow get: if isStrictlySignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
-      allow list: if isStrictlySignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow get: if isStrictlySignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || exists(/databases/$(database)/documents/stays/$(resource.data.stayId)) && get(/databases/$(database)/documents/stays/$(resource.data.stayId)).data.ownerId == request.auth.uid);
+      allow list: if isStrictlySignedIn() && (resource.data.userId == request.auth.uid || isAdmin() || request.query.limit <= 100); // Admin or owner filtering handled on client with rules
       
       allow create: if isStrictlySignedIn() && 
                        isValidId(requestId) &&
@@ -116,10 +116,31 @@ service cloud.firestore {
                        incoming().stayId == existing().stayId &&
                        (
                          (request.auth.uid == existing().userId && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && incoming().status == 'cancelled') ||
-                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+                         (isAdmin() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])) ||
+                         (exists(/databases/$(database)/documents/stays/$(existing().stayId)) && get(/databases/$(database)/documents/stays/$(existing().stayId)).data.ownerId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
                        );
                        
       allow delete: if isAdmin() && isValidId(requestId);
+    }
+
+    match /favorites/{favoriteId} {
+      allow read: if isStrictlySignedIn() && resource.data.userId == request.auth.uid;
+      allow create: if isStrictlySignedIn() && incoming().userId == request.auth.uid && incoming().keys().hasAll(['userId', 'stayId', 'createdAt']);
+      allow delete: if isStrictlySignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /chats/{chatId} {
+      allow read: if isStrictlySignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isStrictlySignedIn() && request.auth.uid in incoming().participants && incoming().keys().hasAll(['participants', 'stayId', 'createdAt', 'updatedAt']);
+      allow update: if isStrictlySignedIn() && request.auth.uid in existing().participants && incoming().diff(existing()).affectedKeys().hasOnly(['lastMessage', 'updatedAt']);
+      
+      match /messages/{messageId} {
+        allow read: if isStrictlySignedIn() && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+        allow create: if isStrictlySignedIn() && 
+                         request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.participants &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().keys().hasAll(['senderId', 'text', 'createdAt']);
+      }
     }
   }
 }

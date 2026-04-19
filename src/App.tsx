@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useScroll, useMotionValueEvent } from 'motion/react';
 import { MapPin, Star, X, ChevronRight, Moon, Sun, Bell, MessageCircle, Home, CheckCircle2, Navigation, User as UserIcon, Loader2, Plus, ShieldCheck } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { MOCK_STAYS, Stay } from './data/stays';
 import { db, auth } from './services/firebase';
 import { 
   collection, getDocs, doc, setDoc, query, serverTimestamp, 
-  onSnapshot, addDoc, updateDoc, where
+  onSnapshot, addDoc, updateDoc, where, deleteDoc
 } from 'firebase/firestore';
 import { 
   signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut, User 
 } from 'firebase/auth';
+import { Toaster, toast } from 'sonner';
 
 const GoogleIcon = () => (
   <svg viewBox="0 0 24 24" className="w-5 h-5">
@@ -31,7 +32,8 @@ const Navbar = ({
   isAdmin,
   onLoginClick,
   onAddListing,
-  onAdminBoard
+  onAdminBoard,
+  onDashboardClick
 }: {
   theme: 'light' | 'dark',
   toggleTheme: () => void,
@@ -42,67 +44,107 @@ const Navbar = ({
   isAdmin: boolean,
   onLoginClick: () => void,
   onAddListing: () => void,
-  onAdminBoard: () => void
-}) => (
-  <nav className="fixed top-0 left-0 right-0 z-50 py-4 px-6 md:px-12">
-    <div className="max-w-[1400px] mx-auto bg-card/60 backdrop-blur-xl rounded-full px-6 py-3 flex items-center justify-between shadow-sm border border-noir/10 transition-colors duration-300">
-      
-      {/* Left: Brand */}
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 bg-maroon rounded-full flex items-center justify-center text-cotton font-serif font-bold text-lg shadow-sm">
-          U
-        </div>
-        <span className="text-lg font-serif italic text-noir hidden sm:block">UniStay</span>
-      </div>
+  onAdminBoard: () => void,
+  onDashboardClick: () => void
+}) => {
+  const { scrollY } = useScroll();
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [isHidden, setIsHidden] = useState(false);
 
-      {/* Center: Location tracker */}
-      <div className="flex items-center gap-1.5 bg-cotton/50 border border-noir/10 pl-2 pr-3 py-1 rounded-full group transition-all">
-        <button 
-          onClick={onLocate}
-          disabled={isLocating}
-          className="p-1.5 hover:bg-noir/5 rounded-full text-noir/60 hover:text-cherry transition-colors disabled:opacity-50"
-          title="Use GPS tracking"
-        >
-          {isLocating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
-        </button>
-        <span className="text-xs font-medium text-noir truncate max-w-[120px]">{location}</span>
-      </div>
+  useMotionValueEvent(scrollY, "change", (latest) => {
+    const previous = scrollY.getPrevious() ?? 0;
+    if (latest > previous && latest > 150) {
+      setIsHidden(true); // Hide when scrolling down
+    } else {
+      setIsHidden(false); // Show when scrolling up
+    }
+    setIsScrolled(latest > 40);
+  });
 
-      {/* Right: Controls */}
-      <div className="flex items-center gap-4 text-noir/70">
-        <button onClick={toggleTheme} className="p-1 hover:text-cherry transition-colors">
-          {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
-        <Bell className="w-4 h-4 cursor-pointer hover:text-cherry transition-colors hidden sm:block" />
+  return (
+    <motion.nav 
+      variants={{ visible: { y: 0 }, hidden: { y: "-100%" } }}
+      animate={isHidden ? "hidden" : "visible"}
+      transition={{ duration: 0.3, ease: "easeInOut" }}
+      className="fixed top-0 left-0 right-0 z-50 py-4 px-4 md:px-12 pointer-events-none"
+    >
+      <motion.div 
+        layout
+        transition={{ duration: 0.3, ease: 'circOut' }}
+        className={`pointer-events-auto max-w-[1400px] mx-auto flex items-center justify-between rounded-full px-6 py-3 transition-all duration-500
+          ${isScrolled 
+            ? 'bg-card shadow-lg border border-noir/10' 
+            : 'bg-transparent border-transparent'
+          }
+        `}
+      >
         
-        {user ? (
-          <div className="flex items-center gap-3 pl-2 border-l border-noir/10">
-            {isAdmin && (
-              <button onClick={onAdminBoard} className="text-xs font-bold hover:text-cherry uppercase tracking-widest text-maroon hidden md:block">
-                Admin
-              </button>
-            )}
-            <button onClick={onAddListing} className="text-xs font-bold hover:text-cherry uppercase tracking-widest hidden md:block">
-              Host
-            </button>
-            <button onClick={() => signOut(auth)} className="text-xs font-bold hover:text-cherry uppercase tracking-widest text-noir/50 hidden md:block">Logout</button>
-            <img src={user.photoURL || 'https://i.pravatar.cc/150'} alt="Profile" className="w-7 h-7 rounded-full border border-noir/10" referrerPolicy="no-referrer" title={user.displayName || ''} />
+        {/* Left: Brand */}
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-maroon rounded-full flex items-center justify-center text-cotton font-serif font-bold text-lg shadow-md">
+            U
           </div>
-        ) : (
-          <div className="pl-2 border-l border-noir/10">
-            <button 
-              onClick={onLoginClick}
-              className="flex items-center gap-1.5 text-xs font-bold tracking-wide uppercase bg-noir text-cotton px-3 py-1.5 rounded-full hover:bg-maroon transition-colors"
-            >
-              Sign In
-            </button>
-          </div>
-        )}
-      </div>
+          <span className="text-lg font-serif italic text-noir hidden sm:block">UniStay</span>
+        </div>
 
-    </div>
-  </nav>
-);
+        {/* Center: Location tracker */}
+        <div className={`flex items-center gap-1.5 pl-2 pr-3 py-1 rounded-full group transition-all duration-500 ${isScrolled ? 'bg-noir/5 dark:bg-cotton/10 border border-noir/10' : 'bg-noir/5 dark:bg-cotton/5'}`}>
+          <button 
+            onClick={onLocate}
+            disabled={isLocating}
+            className="p-1.5 hover:bg-noir/5 rounded-full text-noir/60 hover:text-cherry transition-colors disabled:opacity-50"
+            title="Use GPS tracking"
+          >
+            {isLocating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Navigation className="w-3.5 h-3.5" />}
+          </button>
+          <span className="text-xs font-medium text-noir truncate max-w-[120px]">{location}</span>
+        </div>
+
+        {/* Right: Controls */}
+        <div className="flex items-center gap-4 text-noir/80">
+          <button onClick={toggleTheme} className="p-1.5 hover:text-cherry hover:bg-noir/5 rounded-full transition-all">
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </button>
+          <Bell className="w-4 h-4 cursor-pointer hover:text-cherry transition-colors hidden sm:block" />
+          
+          {user ? (
+            <div className="flex items-center gap-3 pl-3 border-l border-noir/10">
+              {isAdmin && (
+                <button onClick={onAdminBoard} className="text-xs font-bold hover:text-cherry uppercase tracking-widest text-maroon transition-colors" title="Admin">
+                  <span className="hidden sm:block">Admin</span>
+                  <ShieldCheck className="w-4 h-4 sm:hidden" />
+                </button>
+              )}
+              <button onClick={onAddListing} className="text-xs font-bold hover:text-cherry uppercase tracking-widest transition-colors" title="Host">
+                <span className="hidden sm:block">Host</span>
+                <Plus className="w-4 h-4 sm:hidden" />
+              </button>
+              <button onClick={onDashboardClick} className="text-xs font-bold hover:text-cherry uppercase tracking-widest transition-colors" title="Dashboard">
+                <span className="hidden sm:block">Dashboard</span>
+                <UserIcon className="w-4 h-4 sm:hidden" />
+              </button>
+              <button onClick={() => signOut(auth)} className="text-xs font-bold hover:text-cherry uppercase tracking-widest text-noir/50 transition-colors" title="Logout">
+                <span className="hidden sm:block">Logout</span>
+                <X className="w-4 h-4 sm:hidden" />
+              </button>
+              <img src={user.photoURL || 'https://i.pravatar.cc/150'} alt="Profile" className="w-8 h-8 rounded-full border-2 border-cotton shadow-sm hover:scale-105 transition-transform" referrerPolicy="no-referrer" title={user.displayName || ''} />
+            </div>
+          ) : (
+            <div className="pl-3 border-l border-noir/10">
+              <button 
+                onClick={onLoginClick}
+                className="flex items-center gap-1.5 text-xs font-bold tracking-widest uppercase bg-noir text-cotton px-4 py-2 rounded-full hover:bg-maroon hover:shadow-lg hover:-translate-y-0.5 transition-all duration-300"
+              >
+                Sign In
+              </button>
+            </div>
+          )}
+        </div>
+
+      </motion.div>
+    </motion.nav>
+  );
+};
 
 const Hero = ({ onBookingComplete }: { onBookingComplete: () => void }) => {
   const [selectedOption, setSelectedOption] = useState(1);
@@ -115,9 +157,14 @@ const Hero = ({ onBookingComplete }: { onBookingComplete: () => void }) => {
           <span className="text-cherry italic">curated</span><br />
           for you.
         </h1>
-        <p className="text-lg md:text-xl text-noir/80 max-w-md leading-relaxed font-light transition-colors duration-300">
-          Skip the endless profiles and upfront commitments. Tell us what you need, and we'll connect you with a verified listing instantly.
+        <p className="text-lg md:text-xl text-noir/80 max-w-md leading-relaxed font-light transition-colors duration-300 mb-6">
+          Skip the endless profiles and upfront commitments. An exclusive, premium service that is completely free of charge.
         </p>
+        <div className="flex flex-wrap gap-2">
+          <span className="bg-green-100 text-green-800 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest border border-green-200">100% Free</span>
+          <span className="bg-blue-100 text-blue-800 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest border border-blue-200">Exclusive Access</span>
+          <span className="bg-purple-100 text-purple-800 text-[10px] font-bold px-3 py-1.5 rounded-full uppercase tracking-widest border border-purple-200">Premium Service</span>
+        </div>
       </div>
 
       <div className="bg-card rounded-[2rem] border border-noir/10 shadow-[0_8px_30px_rgb(27,23,23,0.08)] p-8 md:p-10 lg:ml-auto w-full max-w-lg transition-colors duration-300">
@@ -185,13 +232,13 @@ const Hero = ({ onBookingComplete }: { onBookingComplete: () => void }) => {
   );
 };
 
-const StayCard = ({ stay, onClick }: { stay: Stay; onClick: () => void; key?: React.Key }) => (
+const StayCard = ({ stay, onClick, isFavorite, onToggleFavorite }: { stay: Stay; onClick: () => void; isFavorite?: boolean; onToggleFavorite?: (e: React.MouseEvent) => void; key?: React.Key }) => (
   <motion.div
     initial={{ opacity: 0, y: 20 }}
     whileInView={{ opacity: 1, y: 0 }}
     viewport={{ once: true }}
     whileHover={{ y: -4 }}
-    className="bg-card rounded-3xl border border-noir/10 overflow-hidden cursor-pointer group hover:shadow-xl hover:border-cherry/30 transition-all duration-300"
+    className="bg-card rounded-3xl border border-noir/10 overflow-hidden cursor-pointer group hover:shadow-xl hover:border-cherry/30 transition-all duration-300 relative"
     onClick={onClick}
   >
     <div className="relative h-60 overflow-hidden">
@@ -201,10 +248,28 @@ const StayCard = ({ stay, onClick }: { stay: Stay; onClick: () => void; key?: Re
         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
         referrerPolicy="no-referrer"
       />
+      
+      {/* Heart Icon Overlay */}
+      {onToggleFavorite && (
+        <button 
+          onClick={onToggleFavorite}
+          className="absolute top-4 right-4 z-10 bg-card/80 backdrop-blur-sm p-2 rounded-full shadow-sm hover:scale-110 transition-transform"
+        >
+          <svg viewBox="0 0 24 24" fill={isFavorite ? '#8C1C13' : 'none'} stroke={isFavorite ? '#8C1C13' : '#1B1717'} strokeWidth="2" className="w-4 h-4">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+          </svg>
+        </button>
+      )}
+
       <div className="absolute top-4 left-4 bg-card/95 px-3 py-1.5 rounded-lg text-xs font-bold text-noir tracking-wider border border-noir/10 uppercase transition-colors">
         {stay.type}
       </div>
-      <div className="absolute top-4 right-4 bg-card/95 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 text-noir border border-noir/10 transition-colors">
+      {stay.price ? (
+        <div className="absolute bottom-4 left-4 bg-card/95 px-3 py-1.5 rounded-lg text-sm font-bold text-noir tracking-wider shadow-lg">
+          ₹{stay.price}/mo
+        </div>
+      ) : null}
+      <div className="absolute top-14 right-4 bg-card/95 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 text-noir border border-noir/10 transition-colors">
         <Star className="w-3.5 h-3.5 text-cherry fill-current" /> {stay.rating || 5.0}
       </div>
       <div className="absolute bottom-4 right-4 translate-y-10 group-hover:translate-y-0 opacity-0 group-hover:opacity-100 transition-all duration-300">
@@ -307,6 +372,15 @@ const StayModal = ({ stay, onClose, onRequest, loading }: { stay: Stay; onClose:
           </div>
         </div>
 
+        <div className="bg-maroon/5 border border-maroon/20 rounded-2xl p-4 mb-4 mt-2">
+          <h4 className="text-xs font-bold text-maroon uppercase tracking-widest mb-3 flex items-center gap-1.5"><ShieldCheck className="w-4 h-4"/> The UniStay Promise</h4>
+          <ul className="space-y-2 text-xs text-noir/80 font-medium">
+            <li className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> 100% Free of Charge for Students</li>
+            <li className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> Exclusive & Curated Listings</li>
+            <li className="flex items-center gap-2"><CheckCircle2 className="w-3.5 h-3.5 text-green-600" /> Direct Access, Zero Middlemen</li>
+          </ul>
+        </div>
+
         <button 
           onClick={onRequest}
           disabled={loading}
@@ -326,6 +400,8 @@ const AddListingModal = ({ onClose, user }: { onClose: () => void, user: User })
     location: '',
     type: 'PG',
     description: '',
+    price: '',
+    image: ''
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -339,7 +415,8 @@ const AddListingModal = ({ onClose, user }: { onClose: () => void, user: User })
         location: formData.location,
         type: formData.type,
         description: formData.description,
-        image: 'https://picsum.photos/seed/' + Math.random().toString(36) + '/800/600',
+        price: Number(formData.price) || 0,
+        image: formData.image || ('https://picsum.photos/seed/' + Math.random().toString(36) + '/800/600'),
         amenities: ['Verified by Admin', 'Ready to move'],
         distanceToUni: 'Contact for details',
         rating: 5.0,
@@ -347,11 +424,11 @@ const AddListingModal = ({ onClose, user }: { onClose: () => void, user: User })
         status: 'pending',
         createdAt: serverTimestamp()
       });
-      alert('Property securely submitted! It will appear publicly once approved by an Admin.');
+      toast.success('Property securely submitted!', { description: 'It will appear publicly once approved by an Admin.' });
       onClose();
     } catch (err: any) {
       console.error(err);
-      alert(err.message);
+      toast.error('Submission Failed', { description: err.message });
     } finally {
       setLoading(false);
     }
@@ -389,6 +466,16 @@ const AddListingModal = ({ onClose, user }: { onClose: () => void, user: User })
               <option value="Flat">Flat / Apartment</option>
             </select>
           </div>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="text-xs font-bold uppercase tracking-widest text-noir/50 mb-1 block">Monthly Rent</label>
+              <input type="number" value={formData.price} onChange={e => setFormData({...formData, price: e.target.value})} className="w-full bg-cotton/50 border border-noir/10 rounded-xl p-3 text-noir outline-none focus:border-cherry" placeholder="e.g. 5000" />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-bold uppercase tracking-widest text-noir/50 mb-1 block">Image URL</label>
+              <input type="url" value={formData.image} onChange={e => setFormData({...formData, image: e.target.value})} className="w-full bg-cotton/50 border border-noir/10 rounded-xl p-3 text-noir outline-none focus:border-cherry" placeholder="https://..." />
+            </div>
+          </div>
           <div>
             <label className="text-xs font-bold uppercase tracking-widest text-noir/50 mb-1 block">Description</label>
             <textarea required rows={3} value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-cotton/50 border border-noir/10 rounded-xl p-3 text-noir outline-none focus:border-cherry" placeholder="Describe the atmosphere..." />
@@ -419,13 +506,15 @@ const AdminDashboardModal = ({ onClose }: { onClose: () => void }) => {
   const handleApprove = async (id: string) => {
     try {
       await updateDoc(doc(db, 'stays', id), { status: 'approved', updatedAt: serverTimestamp() });
-    } catch (e: any) { alert(e.message); }
+      toast.success('Property Approved');
+    } catch (e: any) { toast.error(e.message); }
   };
 
   const handleReject = async (id: string) => {
     try {
       await updateDoc(doc(db, 'stays', id), { status: 'rejected', updatedAt: serverTimestamp() });
-    } catch (e: any) { alert(e.message); }
+      toast.success('Property Rejected');
+    } catch (e: any) { toast.error(e.message); }
   };
 
   return (
@@ -594,10 +683,11 @@ const AuthModal = ({ onClose, onComplete }: { onClose: () => void, onComplete: (
         role: 'user'
       }, { merge: true });
 
+      toast.success('Signed in successfully', { description: `Welcome back, ${result.user.displayName || 'Student'}` });
       onComplete(result.user);
     } catch (error: any) {
       console.error(error);
-      alert(error.message);
+      toast.error('Authentication Error', { description: error.message });
     } finally {
       setLoading(false);
     }
@@ -653,6 +743,126 @@ const AuthModal = ({ onClose, onComplete }: { onClose: () => void, onComplete: (
   );
 };
 
+const UserDashboard = ({ onClose, user }: { onClose: () => void, user: User }) => {
+  const [requests, setRequests] = useState<any[]>([]);
+  const [inboundRequests, setInboundRequests] = useState<any[]>([]);
+  const [myListings, setMyListings] = useState<Stay[]>([]);
+  const [favorites, setFavorites] = useState<any[]>([]);
+
+  useEffect(() => {
+    // 1. My Outbound Requests
+    const unReq = onSnapshot(query(collection(db, 'viewing_requests'), where('userId', '==', user.uid)), snap => {
+      setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    
+    // 2. My Properties
+    const unList = onSnapshot(query(collection(db, 'stays'), where('ownerId', '==', user.uid)), snap => {
+      setMyListings(snap.docs.map(d => ({ id: d.id, ...d.data() } as Stay)));
+    });
+
+    // 3. Inbound requests for my properties (requires listing IDs)
+    // First wait for listings to load to get IDs, but querying directly is complex without cloud fn. 
+    // We'll fetch all requests and client filter for now since it's an MVP prototype.
+    const unInbound = onSnapshot(query(collection(db, 'viewing_requests')), snap => {
+       const mapped = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+       // We'll filter `inboundRequests` inline based on `myListings` IDs since 'in' query is limited to 10.
+       setInboundRequests(mapped);
+    });
+    
+    // 4. Favorites
+    const unFav = onSnapshot(query(collection(db, 'favorites'), where('userId', '==', user.uid)), snap => {
+       setFavorites(snap.docs.map(d => ({ id: d.id, stayId: d.data().stayId })));
+    });
+
+    return () => { unReq(); unList(); unInbound(); unFav(); };
+  }, [user.uid]);
+
+  const respondToRequest = async (id: string, status: 'fulfilled' | 'cancelled') => {
+     try {
+       await updateDoc(doc(db, 'viewing_requests', id), { status, updatedAt: serverTimestamp() });
+       toast.success(`Request ${status === 'fulfilled' ? 'accepted' : 'declined'}`);
+     } catch (e: any) { toast.error(e.message); }
+  };
+
+  const myListingIds = myListings.map(l => l.id);
+  const actualInbound = inboundRequests.filter(r => myListingIds.includes(r.stayId));
+
+  return (
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-noir/80 backdrop-blur-sm" onClick={onClose}>
+      <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} className="bg-card w-full max-w-5xl rounded-3xl overflow-hidden shadow-2xl relative p-8 h-[85vh] flex flex-col" onClick={e => e.stopPropagation()}>
+        <button onClick={onClose} className="absolute top-4 right-4 text-noir/60 hover:text-noir transition-colors"><X className="w-6 h-6"/></button>
+        <h2 className="text-3xl font-serif text-noir mb-6 border-b border-noir/10 pb-4">My Dashboard</h2>
+        
+        <div className="flex-1 overflow-y-auto space-y-12 pr-2 grid md:grid-cols-2 gap-8">
+          
+          {/* LEFT COLUMN: Student Actions */}
+          <div className="space-y-8">
+            <section>
+              <h3 className="text-xl font-serif text-noir mb-4 flex items-center gap-2"><CheckCircle2 className="w-5 h-5"/> My Outbound Requests</h3>
+              {requests.length === 0 ? <p className="text-sm text-noir/50 italic">No viewing requests submitted.</p> : requests.map(req => (
+                <div key={req.id} className="border border-noir/10 p-4 rounded-xl mb-3 flex justify-between items-center bg-cotton/30">
+                  <div>
+                    <h4 className="font-bold text-sm">Target: {req.stayId.slice(0, 6)}...</h4>
+                    <p className="text-xs text-noir/60">Sent on: {new Date(req.createdAt?.toDate?.() || Date.now()).toLocaleDateString()}</p>
+                  </div>
+                  <span className="text-[10px] uppercase font-bold px-2 py-1 rounded tracking-widest bg-noir text-cotton">{req.status}</span>
+                </div>
+              ))}
+            </section>
+
+            <section>
+              <h3 className="text-xl font-serif text-noir mb-4 flex items-center gap-2">⭐ Favorites ({favorites.length})</h3>
+              {favorites.length === 0 ? <p className="text-sm text-noir/50 italic">You have no saved favorites yet.</p> : (
+                 <div className="text-sm text-noir/60 bg-cotton/50 p-4 border border-noir/10 rounded-xl">
+                   You have {favorites.length} saved properties. Return to the home screen to view them!
+                 </div>
+              )}
+            </section>
+          </div>
+
+          {/* RIGHT COLUMN: Host Actions */}
+          <div className="space-y-8 border-t md:border-t-0 md:border-l border-noir/10 md:pl-8 pt-8 md:pt-0">
+            <section>
+              <h3 className="text-xl font-serif text-noir mb-4 flex items-center gap-2"><Home className="w-5 h-5"/> My Portfolio</h3>
+              {myListings.length === 0 ? <p className="text-sm text-noir/50 italic">You haven't listed any properties yet.</p> : myListings.map(stay => (
+                <div key={stay.id} className="border border-noir/10 p-4 rounded-xl mb-3 flex justify-between items-center bg-cotton/30">
+                  <div>
+                    <h4 className="font-bold text-sm">{stay.name}</h4>
+                    <p className="text-xs text-noir/60">{stay.location} • ₹{stay.price}/mo</p>
+                  </div>
+                  <span className={`text-[10px] uppercase font-bold px-2 py-1 rounded tracking-widest ${stay.status === 'approved' ? 'bg-green-100 text-green-700' : stay.status === 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'}`}>{stay.status}</span>
+                </div>
+              ))}
+            </section>
+
+            <section>
+              <h3 className="text-xl font-serif text-noir mb-4 flex items-center gap-2"><Bell className="w-5 h-5"/> Inbound Lead Requests</h3>
+              {actualInbound.length === 0 ? <p className="text-sm text-noir/50 italic">No incoming student requests.</p> : actualInbound.map(req => (
+                <div key={req.id} className="border border-maroon/20 p-4 rounded-xl mb-3 bg-red-50/10">
+                  <div className="flex justify-between items-center mb-2">
+                    <div>
+                      <h4 className="font-bold text-sm">Lead for stay: {req.stayId.slice(0,4)}</h4>
+                      <p className="text-xs text-noir/60">From UID: {req.userId.slice(0, 5)}...</p>
+                    </div>
+                    <span className="text-[10px] uppercase font-bold px-2 py-1 rounded tracking-widest bg-maroon text-cotton">{req.status}</span>
+                  </div>
+                  {req.status === 'pending' && (
+                     <div className="flex gap-2 mt-2">
+                       <button onClick={() => respondToRequest(req.id, 'fulfilled')} className="flex-1 bg-noir text-cotton text-xs py-1.5 rounded-lg hover:bg-green-700">Accept Viewer</button>
+                       <button onClick={() => respondToRequest(req.id, 'cancelled')} className="flex-1 border border-noir/20 text-xs py-1.5 rounded-lg hover:bg-noir/5">Decline</button>
+                     </div>
+                  )}
+                </div>
+              ))}
+            </section>
+          </div>
+
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 export default function App() {
   const [selectedStay, setSelectedStay] = useState<Stay | null>(null);
   const [activeFilter, setActiveFilter] = useState<'All' | 'PG' | 'Hostel' | 'Flat'>('All');
@@ -668,16 +878,17 @@ export default function App() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showAddListing, setShowAddListing] = useState(false);
   const [showAdminBoard, setShowAdminBoard] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
 
   // Data
   const [stays, setStays] = useState<Stay[]>([]);
+  const [favorites, setFavorites] = useState<{id: string, stayId: string}[]>([]);
   const [isRequesting, setIsRequesting] = useState(false);
 
   // Authentication Listener & Admin Check
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      // Hardcoded Admin Bootstrap (Per your explicit instructions)
       if (currentUser && currentUser.email === 'ishansrivastavaaa@gmail.com') {
          setIsAdmin(true);
       } else {
@@ -687,22 +898,43 @@ export default function App() {
     return unsubscribe;
   }, []);
 
-  // Fetch only Approved Stays from Firestore
+  // Fetch Approved Stays & Favorites
   useEffect(() => {
     const q = query(collection(db, 'stays'), where('status', '==', 'approved'));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unStays = onSnapshot(q, (snapshot) => {
       if (!snapshot.empty) {
          setStays(snapshot.docs.map(d => ({ id: d.id, ...d.data() }) as Stay));
       } else {
-         // Fallback to purely render the page if database is completely wiped
          setStays(MOCK_STAYS);
       }
-    }, (error) => {
-      console.warn("Using public mock data.");
-      setStays(MOCK_STAYS);
-    });
-    return unsubscribe;
-  }, []);
+    }, () => setStays(MOCK_STAYS));
+
+    let unFav = () => {};
+    if (user) {
+       unFav = onSnapshot(query(collection(db, 'favorites'), where('userId', '==', user.uid)), snap => {
+          setFavorites(snap.docs.map(d => ({ id: d.id, stayId: d.data().stayId })));
+       });
+    }
+
+    return () => { unStays(); unFav(); };
+  }, [user]);
+
+  const toggleFavorite = async (e: React.MouseEvent, stayId: string) => {
+     e.stopPropagation();
+     if (!user) {
+        setShowAuthModal(true); return;
+     }
+     const existing = favorites.find(f => f.stayId === stayId);
+     try {
+       if (existing) {
+         await deleteDoc(doc(db, 'favorites', existing.id));
+         toast.success('Removed from favorites');
+       } else {
+         await addDoc(collection(db, 'favorites'), { userId: user.uid, stayId, createdAt: serverTimestamp() });
+         toast.success('Added to favorites');
+       }
+     } catch (err: any) { toast.error(err.message); }
+  };
 
   // Apply Theme
   useEffect(() => {
@@ -717,7 +949,7 @@ export default function App() {
 
   // GPS Location Tracker
   const locateUser = () => {
-    if (!("geolocation" in navigator)) return alert("Geolocation is not supported by your browser");
+    if (!("geolocation" in navigator)) return toast.error("Geolocation is not supported by your browser");
     
     setIsLocating(true);
     navigator.geolocation.getCurrentPosition(async (position) => {
@@ -739,7 +971,7 @@ export default function App() {
         setIsLocating(false);
       }
     }, () => {
-      alert("Unable to retrieve your location");
+      toast.error("Unable to retrieve your location");
       setIsLocating(false);
     });
   };
@@ -768,13 +1000,13 @@ export default function App() {
         status: 'pending',
         createdAt: serverTimestamp(),
       });
-      alert('Your request has been successfully submitted to the concierge.');
+      toast.success('Request sent successfully', { description: 'The concierge will contact you shortly.' });
       setSelectedStay(null);
     } catch (e: any) {
       if (e.message.includes('Missing or insufficient permissions')) {
-        alert("Action denied: Ensure your account is fully verified.");
+        toast.error("Access Denied", { description: "Please ensure your account is fully verified." });
       } else {
-        alert("Failed to submit request.");
+        toast.error("Failed to submit request. Please try again.");
       }
       console.error(e);
     } finally {
@@ -784,6 +1016,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen">
+      <Toaster position="top-center" richColors theme={theme} toastOptions={{ className: 'font-serif tracking-wide border-noir/10 shadow-xl' }} />
       <Navbar 
         theme={theme}
         toggleTheme={toggleTheme}
@@ -795,6 +1028,7 @@ export default function App() {
         onLoginClick={() => setShowAuthModal(true)}
         onAddListing={() => setShowAddListing(true)}
         onAdminBoard={() => setShowAdminBoard(true)}
+        onDashboardClick={() => setShowDashboard(true)}
       />
       
       <Hero onBookingComplete={scrollToListings} />
@@ -826,11 +1060,13 @@ export default function App() {
         {filteredStays.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             <AnimatePresence mode="popLayout">
-              {filteredStays.map(stay => (
+              {filteredStays.map((stay: Stay) => (
                 <StayCard 
                   key={stay.id} 
                   stay={stay} 
                   onClick={() => setSelectedStay(stay)} 
+                  isFavorite={favorites.some(f => f.stayId === stay.id)}
+                  onToggleFavorite={(e) => toggleFavorite(e, stay.id)}
                 />
               ))}
             </AnimatePresence>
@@ -865,6 +1101,10 @@ export default function App() {
 
         {showAdminBoard && isAdmin && (
           <AdminDashboardModal onClose={() => setShowAdminBoard(false)} />
+        )}
+
+        {showDashboard && user && (
+          <UserDashboard onClose={() => setShowDashboard(false)} user={user} />
         )}
 
         {showAuthModal && (
